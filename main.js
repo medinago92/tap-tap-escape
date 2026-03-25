@@ -27,7 +27,6 @@ const PLAYER_Y = GAME_HEIGHT - 90;
 
 const OBSTACLE_WIDTH = 58;
 const OBSTACLE_HEIGHT = 58;
-
 const COIN_SIZE = 28;
 
 const BASE_OBSTACLE_SPEED = 180;
