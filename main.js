@@ -180,6 +180,32 @@ function render() {
 // Lógica del juego
 // ------------------------------
 function spawnObstacle() {
+  function canSpawnCoinAtLane(lane) {
+  const coinSpawnY = -COIN_HEIGHT;
+  const topZoneLimitY = 260;
+
+  for (const coin of coins) {
+    if (coin.lane !== lane) continue;
+    if (coin.y > topZoneLimitY) continue;
+
+    const distanceY = Math.abs(coin.y - coinSpawnY);
+    if (distanceY < COIN_SAFE_DISTANCE_Y) {
+      return false;
+    }
+  }
+
+  for (const obstacle of obstacles) {
+    if (obstacle.lane !== lane) continue;
+    if (obstacle.y > topZoneLimitY) continue;
+
+    const distanceY = Math.abs(obstacle.y - coinSpawnY);
+    if (distanceY < COIN_SAFE_DISTANCE_Y) {
+      return false;
+    }
+  }
+
+  return true;
+}
   const lane = Math.floor(Math.random() * LANES);
   obstacles.push({
     lane,
@@ -189,13 +215,27 @@ function spawnObstacle() {
 }
 
 function spawnCoin() {
-  const lane = Math.floor(Math.random() * LANES);
-  coins.push({
-    lane,
-    y: -COIN_SIZE,
-    collected: false,
-  });
-}
+  if (Math.random() < 0.5) return;
+
+  const lanes = [0, 1, 2];
+
+  for (let i = lanes.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [lanes[i], lanes[j]] = [lanes[j], lanes[i]];
+  }
+
+  for (const lane of lanes) {
+    if (canSpawnCoinAtLane(lane)) {
+      coins.push({
+        lane,
+        y: -COIN_HEIGHT,
+        collected: false,
+      });
+      return;
+    }
+  }
+}{
+  
 
 function endGame() {
   gameRunning = false;
