@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tap Tap Escape</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Tap Tap Escape</h1>
+
+      <section class="hud" aria-label="Marcador">
+        <div class="score-box">
+          <span class="label">Puntos</span>
+          <span id="score">0</span>
+        </div>
+        <div class="score-box">
+          <span class="label">Récord</span>
+          <span id="highScore">0</span>
+        </div>
+      </section>
+
+      <div class="game-wrapper">
+        <canvas id="gameCanvas" width="360" height="640" aria-label="Área de juego"></canvas>
+
+        <div id="startScreen" class="overlay show">
+          <h2>¡Preparado?</h2>
+          <p>Toca, haz clic o usa espacio/flechas para cambiar de carril.</p>
+          <button id="startButton" class="btn">Empezar</button>
+        </div>
+
+        <div id="gameOverScreen" class="overlay">
+          <h2>Game Over</h2>
+          <p>Tu puntuación: <strong id="finalScore">0</strong></p>
+          <button id="restartButton" class="btn">Reiniciar</button>
+        </div>
+      </div>
+
+      <p class="hint">Controles: toque/clic, barra espaciadora, flecha izquierda o flecha derecha.</p>
+    </main>
+
+    <script src="main.js"></script>
+  </body>
+</html>
