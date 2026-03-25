@@ -27,31 +27,32 @@ const PLAYER_Y = GAME_HEIGHT - 90;
 
 const OBSTACLE_WIDTH = 58;
 const OBSTACLE_HEIGHT = 58;
-const COIN_SIZE = 28;
+const BASE_OBSTACLE_SPEED = 180; // píxeles por segundo
+const MAX_OBSTACLE_SPEED = 360; // límite para no hacerlo imposible
+const SPEED_GROWTH_PER_POINT = 1.4; // crecimiento suave de dificultad
+const SPAWN_INTERVAL = 700; // ms
 
-const BASE_OBSTACLE_SPEED = 180;
-const MAX_OBSTACLE_SPEED = 360;
-const SPEED_GROWTH_PER_POINT = 1.4;
+const COIN_WIDTH = 30;
+const COIN_HEIGHT = 30;
+const COIN_SPEED_MULTIPLIER = 0.68; // cae más lenta que los obstáculos
+const COIN_SPAWN_INTERVAL = 1900; // menos frecuente
+const COIN_SAFE_DISTANCE_Y = 130; // evita solapamientos simples en Y
+const COIN_POINTS = 3;
 
-const SPAWN_INTERVAL = 1500;
-const COIN_SPAWN_INTERVAL = 1800;
-
-const LANE_FLASH_DURATION = 120;
+const LANE_FLASH_DURATION = 120; // ms
 
 // ------------------------------
 // Estado del juego
 // ------------------------------
-let currentLane = 1;
+let currentLane = 1; // empieza en el carril central
 let obstacles = [];
 let coins = [];
-
+let effects = [];
 let score = 0;
 let highScore = Number(localStorage.getItem("tapTapEscapeHighScore")) || 0;
-
 let gameRunning = false;
 let gameOver = false;
 let lastTime = 0;
-
 let spawnTimer = 0;
 let coinSpawnTimer = 0;
 let laneFlashUntil = 0;
@@ -59,7 +60,7 @@ let laneFlashUntil = 0;
 highScoreEl.textContent = String(highScore);
 
 // ------------------------------
-// Utilidades
+// Funciones utilitarias
 // ------------------------------
 function laneToX(laneIndex, itemWidth) {
   return laneIndex * LANE_WIDTH + LANE_WIDTH / 2 - itemWidth / 2;
@@ -97,22 +98,15 @@ function getObstacleSpeed() {
   return Math.min(speed, MAX_OBSTACLE_SPEED);
 }
 
-function rectanglesOverlap(a, b) {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
-  );
-}
-
 // ------------------------------
 // Dibujado
 // ------------------------------
 function drawBackground() {
+  // Fondo principal
   ctx.fillStyle = "#0b1120";
   ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
+  // Carriles
   for (let i = 1; i < LANES; i += 1) {
     const x = i * LANE_WIDTH;
     ctx.strokeStyle = "rgba(148,163,184,0.35)";
@@ -123,9 +117,9 @@ function drawBackground() {
     ctx.lineTo(x, GAME_HEIGHT);
     ctx.stroke();
   }
-
   ctx.setLineDash([]);
 
+  // Destello breve al cambiar de carril
   if (performance.now() < laneFlashUntil) {
     const flashX = currentLane * LANE_WIDTH;
     ctx.fillStyle = "rgba(56, 189, 248, 0.16)";
@@ -139,6 +133,7 @@ function drawPlayer() {
   ctx.fillStyle = "#22d3ee";
   ctx.fillRect(x, PLAYER_Y, PLAYER_WIDTH, PLAYER_HEIGHT);
 
+  // Detalle simple para que parezca personaje
   ctx.fillStyle = "#082f49";
   ctx.fillRect(x + 10, PLAYER_Y + 12, 10, 10);
   ctx.fillRect(x + PLAYER_WIDTH - 20, PLAYER_Y + 12, 10, 10);
@@ -146,7 +141,6 @@ function drawPlayer() {
 
 function drawObstacles() {
   ctx.fillStyle = "#f87171";
-
   for (const obstacle of obstacles) {
     const x = laneToX(obstacle.lane, OBSTACLE_WIDTH);
     ctx.fillRect(x, obstacle.y, OBSTACLE_WIDTH, OBSTACLE_HEIGHT);
@@ -155,17 +149,29 @@ function drawObstacles() {
 
 function drawCoins() {
   for (const coin of coins) {
-    const x = laneToX(coin.lane, COIN_SIZE);
+    const x = laneToX(coin.lane, COIN_WIDTH);
+    const centerX = x + COIN_WIDTH / 2;
+    const centerY = coin.y + COIN_HEIGHT / 2;
 
     ctx.fillStyle = "#facc15";
     ctx.beginPath();
-    ctx.arc(x + COIN_SIZE / 2, coin.y + COIN_SIZE / 2, COIN_SIZE / 2, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, COIN_WIDTH / 2, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#fde68a";
+    ctx.fillStyle = "rgba(120, 53, 15, 0.55)";
     ctx.beginPath();
-    ctx.arc(x + COIN_SIZE / 2, coin.y + COIN_SIZE / 2, COIN_SIZE / 3, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, COIN_WIDTH / 4, 0, Math.PI * 2);
     ctx.fill();
+  }
+}
+
+function drawEffects() {
+  for (const effect of effects) {
+    ctx.strokeStyle = `rgba(250, 204, 21, ${effect.alpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
+    ctx.stroke();
   }
 }
 
@@ -174,16 +180,26 @@ function render() {
   drawPlayer();
   drawObstacles();
   drawCoins();
+  drawEffects();
 }
 
 // ------------------------------
 // Lógica del juego
 // ------------------------------
 function spawnObstacle() {
-  function canSpawnCoinAtLane(lane) {
+  const lane = Math.floor(Math.random() * LANES);
+  obstacles.push({
+    lane,
+    y: -OBSTACLE_HEIGHT,
+    passed: false,
+  });
+}
+
+function canSpawnCoinAtLane(lane) {
   const coinSpawnY = -COIN_HEIGHT;
   const topZoneLimitY = 260;
 
+  // Evita monedas cercanas en el mismo carril (solo en zona superior)
   for (const coin of coins) {
     if (coin.lane !== lane) continue;
     if (coin.y > topZoneLimitY) continue;
@@ -194,6 +210,7 @@ function spawnObstacle() {
     }
   }
 
+  // Evita monedas cercanas a obstáculos en el mismo carril (zona superior)
   for (const obstacle of obstacles) {
     if (obstacle.lane !== lane) continue;
     if (obstacle.y > topZoneLimitY) continue;
@@ -206,19 +223,14 @@ function spawnObstacle() {
 
   return true;
 }
-  const lane = Math.floor(Math.random() * LANES);
-  obstacles.push({
-    lane,
-    y: -OBSTACLE_HEIGHT,
-    passed: false,
-  });
-}
 
 function spawnCoin() {
+  // Aproximadamente la mitad de intentos no genera moneda
   if (Math.random() < 0.5) return;
 
   const lanes = [0, 1, 2];
 
+  // Mezcla simple para intentar carriles en orden aleatorio
   for (let i = lanes.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
     [lanes[i], lanes[j]] = [lanes[j], lanes[i]];
@@ -234,8 +246,34 @@ function spawnCoin() {
       return;
     }
   }
-}{
-  
+}
+
+function createCoinCollectEffect(coinX, coinY) {
+  effects.push({
+    x: coinX + COIN_WIDTH / 2,
+    y: coinY + COIN_HEIGHT / 2,
+    radius: 8,
+    alpha: 0.9,
+  });
+}
+
+function checkCollision(playerX, obstacleX, obstacleY) {
+  return (
+    playerX < obstacleX + OBSTACLE_WIDTH &&
+    playerX + PLAYER_WIDTH > obstacleX &&
+    PLAYER_Y < obstacleY + OBSTACLE_HEIGHT &&
+    PLAYER_Y + PLAYER_HEIGHT > obstacleY
+  );
+}
+
+function checkCoinCollection(playerX, coinX, coinY) {
+  return (
+    playerX < coinX + COIN_WIDTH &&
+    playerX + PLAYER_WIDTH > coinX &&
+    PLAYER_Y < coinY + COIN_HEIGHT &&
+    PLAYER_Y + PLAYER_HEIGHT > coinY
+  );
+}
 
 function endGame() {
   gameRunning = false;
@@ -246,74 +284,70 @@ function endGame() {
 
 function update(deltaTime) {
   const playerX = laneToX(currentLane, PLAYER_WIDTH);
-  const playerRect = {
-    x: playerX,
-    y: PLAYER_Y,
-    width: PLAYER_WIDTH,
-    height: PLAYER_HEIGHT,
-  };
-
   const speed = getObstacleSpeed();
-  const coinSpeed = speed * 0.8;
+  const coinSpeed = speed * COIN_SPEED_MULTIPLIER;
 
+  // Generar obstáculos con temporizador
   spawnTimer += deltaTime * 1000;
   if (spawnTimer >= SPAWN_INTERVAL) {
     spawnTimer = 0;
     spawnObstacle();
   }
 
+  // Generar monedas con temporizador
   coinSpawnTimer += deltaTime * 1000;
   if (coinSpawnTimer >= COIN_SPAWN_INTERVAL) {
     coinSpawnTimer = 0;
     spawnCoin();
   }
 
+  // Mover obstáculos y revisar colisiones
   for (const obstacle of obstacles) {
     obstacle.y += speed * deltaTime;
 
     const obstacleX = laneToX(obstacle.lane, OBSTACLE_WIDTH);
-    const obstacleRect = {
-      x: obstacleX,
-      y: obstacle.y,
-      width: OBSTACLE_WIDTH,
-      height: OBSTACLE_HEIGHT,
-    };
-
-    if (rectanglesOverlap(playerRect, obstacleRect)) {
+    if (checkCollision(playerX, obstacleX, obstacle.y)) {
       endGame();
       return;
     }
 
+    // Puntuar cuando el obstáculo ya pasó al jugador
     if (!obstacle.passed && obstacle.y > PLAYER_Y + PLAYER_HEIGHT) {
       obstacle.passed = true;
       updateScore(1);
     }
   }
 
+  // Mover monedas y revisar recolección
   for (const coin of coins) {
     coin.y += coinSpeed * deltaTime;
 
-    const coinX = laneToX(coin.lane, COIN_SIZE);
-    const coinRect = {
-      x: coinX,
-      y: coin.y,
-      width: COIN_SIZE,
-      height: COIN_SIZE,
-    };
-
-    if (!coin.collected && rectanglesOverlap(playerRect, coinRect)) {
+    const coinX = laneToX(coin.lane, COIN_WIDTH);
+    if (!coin.collected && checkCoinCollection(playerX, coinX, coin.y)) {
       coin.collected = true;
-      updateScore(3);
+      createCoinCollectEffect(coinX, coin.y);
+      updateScore(COIN_POINTS);
     }
   }
 
+  // Actualizar efectos visuales
+  for (const effect of effects) {
+    effect.radius += 180 * deltaTime;
+    effect.alpha -= 4 * deltaTime;
+  }
+
+  // Limpiar obstáculos que ya salieron de pantalla
   obstacles = obstacles.filter(
     (obstacle) => obstacle.y < GAME_HEIGHT + OBSTACLE_HEIGHT
   );
 
+  // Limpiar monedas recolectadas o fuera de pantalla
   coins = coins.filter(
-    (coin) => !coin.collected && coin.y < GAME_HEIGHT + COIN_SIZE
+    (coin) => !coin.collected && coin.y < GAME_HEIGHT + COIN_HEIGHT
   );
+
+  // Limpiar efectos terminados
+  effects = effects.filter((effect) => effect.alpha > 0);
 }
 
 function gameLoop(timestamp) {
@@ -322,6 +356,7 @@ function gameLoop(timestamp) {
     return;
   }
 
+  // Delta time en segundos
   const deltaTime = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
 
@@ -337,6 +372,7 @@ function resetGameState() {
   currentLane = 1;
   obstacles = [];
   coins = [];
+  effects = [];
   score = 0;
   spawnTimer = 0;
   coinSpawnTimer = 0;
@@ -417,4 +453,5 @@ window.addEventListener("keydown", (event) => {
 startButton.addEventListener("click", startGame);
 restartButton.addEventListener("click", startGame);
 
+// Primer render para mostrar pantalla inicial
 render();
