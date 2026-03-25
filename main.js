@@ -27,281 +27,355 @@ const PLAYER_Y = GAME_HEIGHT - 90;
 
 const OBSTACLE_WIDTH = 58;
 const OBSTACLE_HEIGHT = 58;
-const BASE_OBSTACLE_SPEED = 180; // píxeles por segundo
-const MAX_OBSTACLE_SPEED = 360; // límite para no hacerlo imposible
-const SPEED_GROWTH_PER_POINT = 1.4; // crecimiento suave de dificultad
-const SPAWN_INTERVAL = 700; // ms
 
-const LANE_FLASH_DURATION = 120; // ms
+const COIN_SIZE = 28;
+
+const BASE_OBSTACLE_SPEED = 180;
+const MAX_OBSTACLE_SPEED = 360;
+const SPEED_GROWTH_PER_POINT = 1.4;
+
+const SPAWN_INTERVAL = 700;
+const COIN_SPAWN_INTERVAL = 900;
+
+const LANE_FLASH_DURATION = 120;
 
 // ------------------------------
 // Estado del juego
 // ------------------------------
-let currentLane = 1; // empieza en el carril central
+let currentLane = 1;
 let obstacles = [];
+let coins = [];
+
 let score = 0;
 let highScore = Number(localStorage.getItem("tapTapEscapeHighScore")) || 0;
+
 let gameRunning = false;
 let gameOver = false;
 let lastTime = 0;
+
 let spawnTimer = 0;
+let coinSpawnTimer = 0;
 let laneFlashUntil = 0;
 
 highScoreEl.textContent = String(highScore);
 
 // ------------------------------
-// Funciones utilitarias
+// Utilidades
 // ------------------------------
 function laneToX(laneIndex, itemWidth) {
-return laneIndex * LANE_WIDTH + LANE_WIDTH / 2 - itemWidth / 2;
+  return laneIndex * LANE_WIDTH + LANE_WIDTH / 2 - itemWidth / 2;
 }
 
 function clampLane(value) {
-return Math.max(0, Math.min(LANES - 1, value));
+  return Math.max(0, Math.min(LANES - 1, value));
 }
 
 function triggerLaneFlash() {
-laneFlashUntil = performance.now() + LANE_FLASH_DURATION;
+  laneFlashUntil = performance.now() + LANE_FLASH_DURATION;
 }
 
 function moveLane(direction) {
-const nextLane = clampLane(currentLane + direction);
-if (nextLane !== currentLane) {
-currentLane = nextLane;
-triggerLaneFlash();
-}
+  const nextLane = clampLane(currentLane + direction);
+  if (nextLane !== currentLane) {
+    currentLane = nextLane;
+    triggerLaneFlash();
+  }
 }
 
 function updateScore(points) {
-score += points;
-scoreEl.textContent = String(score);
+  score += points;
+  scoreEl.textContent = String(score);
 
-if (score > highScore) {
-highScore = score;
-highScoreEl.textContent = String(highScore);
-localStorage.setItem("tapTapEscapeHighScore", String(highScore));
-}
+  if (score > highScore) {
+    highScore = score;
+    highScoreEl.textContent = String(highScore);
+    localStorage.setItem("tapTapEscapeHighScore", String(highScore));
+  }
 }
 
 function getObstacleSpeed() {
-const speed = BASE_OBSTACLE_SPEED + score * SPEED_GROWTH_PER_POINT;
-return Math.min(speed, MAX_OBSTACLE_SPEED);
+  const speed = BASE_OBSTACLE_SPEED + score * SPEED_GROWTH_PER_POINT;
+  return Math.min(speed, MAX_OBSTACLE_SPEED);
+}
+
+function rectanglesOverlap(a, b) {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
 }
 
 // ------------------------------
 // Dibujado
 // ------------------------------
 function drawBackground() {
-// Fondo principal
-ctx.fillStyle = "#0b1120";
-ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  ctx.fillStyle = "#0b1120";
+  ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-// Carriles
-for (let i = 1; i < LANES; i += 1) {
-const x = i * LANE_WIDTH;
-ctx.strokeStyle = "rgba(148,163,184,0.35)";
-ctx.lineWidth = 2;
-ctx.setLineDash([12, 14]);
-ctx.beginPath();
-ctx.moveTo(x, 0);
-ctx.lineTo(x, GAME_HEIGHT);
-ctx.stroke();
-}
-ctx.setLineDash([]);
+  for (let i = 1; i < LANES; i += 1) {
+    const x = i * LANE_WIDTH;
+    ctx.strokeStyle = "rgba(148,163,184,0.35)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([12, 14]);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, GAME_HEIGHT);
+    ctx.stroke();
+  }
 
-// Destello breve al cambiar de carril
-if (performance.now() < laneFlashUntil) {
-const flashX = currentLane * LANE_WIDTH;
-ctx.fillStyle = "rgba(56, 189, 248, 0.16)";
-ctx.fillRect(flashX, 0, LANE_WIDTH, GAME_HEIGHT);
-}
+  ctx.setLineDash([]);
+
+  if (performance.now() < laneFlashUntil) {
+    const flashX = currentLane * LANE_WIDTH;
+    ctx.fillStyle = "rgba(56, 189, 248, 0.16)";
+    ctx.fillRect(flashX, 0, LANE_WIDTH, GAME_HEIGHT);
+  }
 }
 
 function drawPlayer() {
-const x = laneToX(currentLane, PLAYER_WIDTH);
+  const x = laneToX(currentLane, PLAYER_WIDTH);
 
-ctx.fillStyle = "#22d3ee";
-ctx.fillRect(x, PLAYER_Y, PLAYER_WIDTH, PLAYER_HEIGHT);
+  ctx.fillStyle = "#22d3ee";
+  ctx.fillRect(x, PLAYER_Y, PLAYER_WIDTH, PLAYER_HEIGHT);
 
-// Detalle simple para que parezca personaje
-ctx.fillStyle = "#082f49";
-ctx.fillRect(x + 10, PLAYER_Y + 12, 10, 10);
-ctx.fillRect(x + PLAYER_WIDTH - 20, PLAYER_Y + 12, 10, 10);
+  ctx.fillStyle = "#082f49";
+  ctx.fillRect(x + 10, PLAYER_Y + 12, 10, 10);
+  ctx.fillRect(x + PLAYER_WIDTH - 20, PLAYER_Y + 12, 10, 10);
 }
 
 function drawObstacles() {
-ctx.fillStyle = "#f87171";
-for (const obstacle of obstacles) {
-const x = laneToX(obstacle.lane, OBSTACLE_WIDTH);
-ctx.fillRect(x, obstacle.y, OBSTACLE_WIDTH, OBSTACLE_HEIGHT);
+  ctx.fillStyle = "#f87171";
+
+  for (const obstacle of obstacles) {
+    const x = laneToX(obstacle.lane, OBSTACLE_WIDTH);
+    ctx.fillRect(x, obstacle.y, OBSTACLE_WIDTH, OBSTACLE_HEIGHT);
+  }
 }
+
+function drawCoins() {
+  for (const coin of coins) {
+    const x = laneToX(coin.lane, COIN_SIZE);
+
+    ctx.fillStyle = "#facc15";
+    ctx.beginPath();
+    ctx.arc(x + COIN_SIZE / 2, coin.y + COIN_SIZE / 2, COIN_SIZE / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#fde68a";
+    ctx.beginPath();
+    ctx.arc(x + COIN_SIZE / 2, coin.y + COIN_SIZE / 2, COIN_SIZE / 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function render() {
-drawBackground();
-drawPlayer();
-drawObstacles();
+  drawBackground();
+  drawPlayer();
+  drawObstacles();
+  drawCoins();
 }
 
 // ------------------------------
 // Lógica del juego
 // ------------------------------
 function spawnObstacle() {
-const lane = Math.floor(Math.random() * LANES);
-obstacles.push({
-lane,
-y: -OBSTACLE_HEIGHT,
-passed: false,
-});
+  const lane = Math.floor(Math.random() * LANES);
+  obstacles.push({
+    lane,
+    y: -OBSTACLE_HEIGHT,
+    passed: false,
+  });
 }
 
-function checkCollision(playerX, obstacleX, obstacleY) {
-return (
-playerX < obstacleX + OBSTACLE_WIDTH &&
-playerX + PLAYER_WIDTH > obstacleX &&
-PLAYER_Y < obstacleY + OBSTACLE_HEIGHT &&
-PLAYER_Y + PLAYER_HEIGHT > obstacleY
-);
+function spawnCoin() {
+  const lane = Math.floor(Math.random() * LANES);
+  coins.push({
+    lane,
+    y: -COIN_SIZE,
+    collected: false,
+  });
 }
 
 function endGame() {
-gameRunning = false;
-gameOver = true;
-finalScoreEl.textContent = String(score);
-gameOverScreen.classList.add("show");
+  gameRunning = false;
+  gameOver = true;
+  finalScoreEl.textContent = String(score);
+  gameOverScreen.classList.add("show");
 }
 
 function update(deltaTime) {
-const playerX = laneToX(currentLane, PLAYER_WIDTH);
-const speed = getObstacleSpeed();
+  const playerX = laneToX(currentLane, PLAYER_WIDTH);
+  const playerRect = {
+    x: playerX,
+    y: PLAYER_Y,
+    width: PLAYER_WIDTH,
+    height: PLAYER_HEIGHT,
+  };
 
-// Generar obstáculos con temporizador
-spawnTimer += deltaTime * 1000;
-if (spawnTimer >= SPAWN_INTERVAL) {
-spawnTimer = 0;
-spawnObstacle();
-}
+  const speed = getObstacleSpeed();
+  const coinSpeed = speed * 0.8;
 
-// Mover obstáculos y revisar colisiones
-for (const obstacle of obstacles) {
-obstacle.y += speed * deltaTime;
+  spawnTimer += deltaTime * 1000;
+  if (spawnTimer >= SPAWN_INTERVAL) {
+    spawnTimer = 0;
+    spawnObstacle();
+  }
 
-const obstacleX = laneToX(obstacle.lane, OBSTACLE_WIDTH);
-if (checkCollision(playerX, obstacleX, obstacle.y)) {
-  endGame();
-  return;
-}
+  coinSpawnTimer += deltaTime * 1000;
+  if (coinSpawnTimer >= COIN_SPAWN_INTERVAL) {
+    coinSpawnTimer = 0;
+    spawnCoin();
+  }
 
-// Puntuar cuando el obstáculo ya pasó al jugador
-if (!obstacle.passed && obstacle.y > PLAYER_Y + PLAYER_HEIGHT) {
-  obstacle.passed = true;
-  updateScore(1);
-}
-}
+  for (const obstacle of obstacles) {
+    obstacle.y += speed * deltaTime;
 
-// Limpiar obstáculos que ya salieron de pantalla
-obstacles = obstacles.filter((obstacle) => obstacle.y < GAME_HEIGHT + OBSTACLE_HEIGHT);
+    const obstacleX = laneToX(obstacle.lane, OBSTACLE_WIDTH);
+    const obstacleRect = {
+      x: obstacleX,
+      y: obstacle.y,
+      width: OBSTACLE_WIDTH,
+      height: OBSTACLE_HEIGHT,
+    };
+
+    if (rectanglesOverlap(playerRect, obstacleRect)) {
+      endGame();
+      return;
+    }
+
+    if (!obstacle.passed && obstacle.y > PLAYER_Y + PLAYER_HEIGHT) {
+      obstacle.passed = true;
+      updateScore(1);
+    }
+  }
+
+  for (const coin of coins) {
+    coin.y += coinSpeed * deltaTime;
+
+    const coinX = laneToX(coin.lane, COIN_SIZE);
+    const coinRect = {
+      x: coinX,
+      y: coin.y,
+      width: COIN_SIZE,
+      height: COIN_SIZE,
+    };
+
+    if (!coin.collected && rectanglesOverlap(playerRect, coinRect)) {
+      coin.collected = true;
+      updateScore(3);
+    }
+  }
+
+  obstacles = obstacles.filter(
+    (obstacle) => obstacle.y < GAME_HEIGHT + OBSTACLE_HEIGHT
+  );
+
+  coins = coins.filter(
+    (coin) => !coin.collected && coin.y < GAME_HEIGHT + COIN_SIZE
+  );
 }
 
 function gameLoop(timestamp) {
-if (!gameRunning) {
-render();
-return;
-}
+  if (!gameRunning) {
+    render();
+    return;
+  }
 
-// Delta time en segundos
-const deltaTime = Math.min((timestamp - lastTime) / 1000, 0.05);
-lastTime = timestamp;
+  const deltaTime = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
 
-update(deltaTime);
-render();
+  update(deltaTime);
+  render();
 
-if (gameRunning) {
-requestAnimationFrame(gameLoop);
-}
+  if (gameRunning) {
+    requestAnimationFrame(gameLoop);
+  }
 }
 
 function resetGameState() {
-currentLane = 1;
-obstacles = [];
-score = 0;
-spawnTimer = 0;
-gameOver = false;
-laneFlashUntil = 0;
-scoreEl.textContent = "0";
+  currentLane = 1;
+  obstacles = [];
+  coins = [];
+  score = 0;
+  spawnTimer = 0;
+  coinSpawnTimer = 0;
+  gameOver = false;
+  laneFlashUntil = 0;
+  scoreEl.textContent = "0";
 }
 
 function startGame() {
-resetGameState();
-startScreen.classList.remove("show");
-gameOverScreen.classList.remove("show");
-gameRunning = true;
-lastTime = performance.now();
-requestAnimationFrame(gameLoop);
+  resetGameState();
+  startScreen.classList.remove("show");
+  gameOverScreen.classList.remove("show");
+  gameRunning = true;
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
 }
 
 // ------------------------------
 // Controles
 // ------------------------------
 function handleCanvasAction(clientX) {
-const rect = canvas.getBoundingClientRect();
-const xInsideCanvas = clientX - rect.left;
+  const rect = canvas.getBoundingClientRect();
+  const xInsideCanvas = clientX - rect.left;
 
-if (!gameRunning && !gameOver) {
-startGame();
-return;
-}
+  if (!gameRunning && !gameOver) {
+    startGame();
+    return;
+  }
 
-if (!gameRunning) return;
+  if (!gameRunning) return;
 
-if (xInsideCanvas < rect.width / 2) {
-moveLane(-1);
-} else {
-moveLane(1);
-}
+  if (xInsideCanvas < rect.width / 2) {
+    moveLane(-1);
+  } else {
+    moveLane(1);
+  }
 }
 
 canvas.addEventListener("click", (event) => {
-event.preventDefault();
-handleCanvasAction(event.clientX);
+  event.preventDefault();
+  handleCanvasAction(event.clientX);
 });
 
 canvas.addEventListener(
-"touchstart",
-(event) => {
-event.preventDefault();
-const touch = event.changedTouches[0];
-if (touch) {
-handleCanvasAction(touch.clientX);
-}
-},
-{ passive: false }
+  "touchstart",
+  (event) => {
+    event.preventDefault();
+    const touch = event.changedTouches[0];
+    if (touch) {
+      handleCanvasAction(touch.clientX);
+    }
+  },
+  { passive: false }
 );
 
 window.addEventListener("keydown", (event) => {
-const key = event.key;
+  const key = event.key;
 
-if (key === " ") {
-event.preventDefault();
-if (!gameRunning && !gameOver) {
-startGame();
-}
-return;
-}
+  if (key === " ") {
+    event.preventDefault();
+    if (!gameRunning && !gameOver) {
+      startGame();
+    }
+    return;
+  }
 
-if (!gameRunning) return;
+  if (!gameRunning) return;
 
-if (key === "ArrowLeft") {
-event.preventDefault();
-moveLane(-1);
-} else if (key === "ArrowRight") {
-event.preventDefault();
-moveLane(1);
-}
+  if (key === "ArrowLeft") {
+    event.preventDefault();
+    moveLane(-1);
+  } else if (key === "ArrowRight") {
+    event.preventDefault();
+    moveLane(1);
+  }
 });
 
 startButton.addEventListener("click", startGame);
 restartButton.addEventListener("click", startGame);
 
-// Primer render para mostrar pantalla inicial
 render();
